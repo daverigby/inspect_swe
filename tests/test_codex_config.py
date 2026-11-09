@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 from inspect_ai.agent._bridge.util import resolve_inspect_model
 from inspect_ai.model import Model, get_model
-from inspect_ai.tool._mcp._config import MCPServerConfigHTTP
+from inspect_ai.tool._mcp._config import MCPServerConfigHTTP, MCPServerConfigStdio
 from inspect_swe import codex_cli, interactive_codex_cli
 from inspect_swe._codex_cli.config import (
     GUARDIAN_MODEL_SLUG,
@@ -695,3 +695,34 @@ def test_codex_mcp_servers_toml_gates_on_force_approve() -> None:
         == "approve"
     )
     assert bridged_toml["mcp_servers.bridged-tools"]["required"] is True
+
+
+@pytest.mark.parametrize("force_approve", [False, True])
+def test_codex_mcp_servers_toml_preserves_env(force_approve: bool) -> None:
+    env = {
+        "DATA_DIR": "/workspace/data",
+        "MESSAGE": 'line one\nline "two"',
+        "EMPTY": "",
+    }
+    server = MCPServerConfigStdio(
+        name="caller-tools", command="server", args=["--stdio"], env=env
+    )
+    config = codex_mcp_servers_toml(
+        [server], set(), "never", force_approve, MCP_STARTUP_TIMEOUT_SEC
+    )
+
+    parsed = tomllib.loads(to_toml(config))["mcp_servers"]["caller-tools"]
+    assert parsed["env"] == env
+    assert parsed["command"] == "server"
+    assert parsed["args"] == ["--stdio"]
+
+
+def test_to_toml_preserves_nested_tables() -> None:
+    config = {
+        "server": {
+            "env": {"nested": {"key.with.dots": 'value "quoted"'}, "empty": {}},
+            "enabled": True,
+        },
+        "other": {"command": "server"},
+    }
+    assert tomllib.loads(to_toml(config)) == config
